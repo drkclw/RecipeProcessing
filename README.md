@@ -1,4 +1,4 @@
-**Cognitive Services Demo**
+# Cognitive Services Demo
 
 This blazor application shows how to use the following Cognitive Services APIs:
 
