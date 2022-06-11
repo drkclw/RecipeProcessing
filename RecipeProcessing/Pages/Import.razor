@@ -1,0 +1,86 @@
+﻿@using RecipeProcessing.Models.Recipes
+@using RecipeProcessing.Services
+@using System.Text
+@inject ImageService imageService
+@inject TextAnalyticsService textAnalyticsService
+@inject IJSRuntime JSRuntime
+
+@page "/import"
+
+
+<img id="recipePreview"/>
+
+<InputFile OnChange="@ImportRecipe" />
+
+<label for="recipeName">Name: </label>
+<input id="recipeName" name="recipeName" class="form-control" placeholder="Recipe name" aria-label="Input group example" aria-describedby="basic-addon1" @bind="CurrentRecipe.Name">
+
+<label for="recipeIngredients">Ingredients: </label>
+<textarea id="recipeIngredients" name="recipeIngredients" class="form-control" placeholder="Recipe name" aria-label="Input group example" aria-describedby="basic-addon1" @bind="CurrentRecipe.Ingredients"></textarea>
+
+<label for="recipePreparation">Preparation: </label>
+<textarea id="recipePreparation" name="recipePreparation" class="form-control" placeholder="Recipe name" aria-label="Input group example" aria-describedby="basic-addon1" @bind="CurrentRecipe.Preparation"></textarea>
+
+@code {
+    private Recipe CurrentRecipe = new Recipe();
+
+    private async Task ImportRecipe(InputFileChangeEventArgs e)
+    {
+
+        var imageFile = e.File;
+        var resizedImage = 
+            await imageFile.RequestImageFileAsync("image/jpg", 500, 500);
+        var jsImageStream = resizedImage.OpenReadStream();
+        var dotnetImageStream = new DotNetStreamReference(jsImageStream);
+        await JSRuntime.InvokeVoidAsync("setImageUsingStreaming", 
+            "recipePreview", dotnetImageStream);
+
+        var results = await imageService.ExtractText(e.File.OpenReadStream(maxAllowedSize: 3000000));
+
+        var ingredients = new StringBuilder();
+        var name = "";
+        var preparation = new StringBuilder();
+        var quantityFound = false;
+        var productFound = false;
+
+        foreach (var line in results)
+        {
+            quantityFound = false;
+            productFound = false;
+
+            if (line.Contains("Recipe") || line.Contains("RECIPE"))
+            {
+                name = line;
+            }
+            else
+            {
+                var entitiesResult = await textAnalyticsService.RecognizeEntities(line);
+                foreach (var category in entitiesResult.Categories)
+                {
+                    if (category == "Quantity")
+                    {
+                        quantityFound = true;
+                    }
+                    if (category == "Product")
+                    {
+                        productFound = true;
+                    }
+                    if (quantityFound && productFound)
+                    {
+                        ingredients.AppendLine(line);
+                        break;
+                    }
+                }
+                if (!productFound || !quantityFound)
+                {
+                    preparation.AppendLine(line);
+                }
+            }
+        }
+
+        CurrentRecipe.Name = name;
+        CurrentRecipe.Ingredients = ingredients.ToString();
+        CurrentRecipe.Preparation = preparation.ToString();
+    }
+
+}
